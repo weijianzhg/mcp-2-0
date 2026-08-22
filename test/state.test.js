@@ -18,3 +18,21 @@ test("explicit counterId carries application state across stateless requests", a
   );
   assert.ok(result.stateful.every(({ counterId }) => counterId === result.stateful[0].counterId));
 });
+
+test("delete-files uses MRTR to confirm or cancel destructive work", async () => {
+  const result = await runDemo(() => {});
+
+  assert.deepEqual(result.elicitationRequests, [
+    { message: "Delete 3 virtual files?", confirm: true },
+    { message: "Delete 1 virtual file?", confirm: false },
+  ]);
+  assert.deepEqual(result.confirmedDeletion, {
+    status: "deleted",
+    deleted: ["a.txt", "b.txt", "c.txt"],
+  });
+  assert.deepEqual(result.cancelledDeletion, { status: "cancelled", deleted: [] });
+
+  const deleteRequests = result.requests.filter(({ name }) => name === "delete-files");
+  assert.equal(deleteRequests.length, 4);
+  assert.ok(deleteRequests.every(({ sessionId }) => sessionId === null));
+});

@@ -7,7 +7,12 @@ import {
   localhostOriginValidation,
   toNodeHandler,
 } from "@modelcontextprotocol/node";
-import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import {
+  acceptedContent,
+  createMcpHandler,
+  inputRequired,
+  McpServer,
+} from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
 // This Map represents durable application storage. It deliberately lives
@@ -15,7 +20,9 @@ import * as z from "zod/v4";
 const countersById = new Map();
 let nextServerInstance = 0;
 
-function createStateServer() {
+const confirmationSchema = z.object({ confirm: z.boolean() });
+
+function createStateServer(demoFiles) {
   const serverInstance = ++nextServerInstance;
   let ephemeralCounter = 0;
   const server = new McpServer({ name: "mcp-state-demo", version: "0.1.0" });
@@ -82,11 +89,60 @@ function createStateServer() {
     },
   );
 
+  server.registerTool(
+    "delete-files",
+    {
+      description: "Delete virtual demo files after asking the user for confirmation.",
+      inputSchema: z.object({ files: z.array(z.string()).min(1) }),
+      outputSchema: z.object({
+        status: z.enum(["cancelled", "deleted"]),
+        deleted: z.array(z.string()),
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async ({ files }, ctx) => {
+      const confirmation = acceptedContent(
+        ctx.mcpReq.inputResponses,
+        "confirm",
+        confirmationSchema,
+      );
+
+      if (confirmation === undefined) {
+        return inputRequired({
+          inputRequests: {
+            confirm: inputRequired.elicit({
+              message: `Delete ${files.length} virtual file${files.length === 1 ? "" : "s"}?`,
+              requestedSchema: confirmationSchema,
+            }),
+          },
+        });
+      }
+
+      if (!confirmation.confirm) {
+        const structuredContent = { status: "cancelled", deleted: [] };
+        return {
+          content: [{ type: "text", text: "Cancelled" }],
+          structuredContent,
+        };
+      }
+
+      const deleted = files.filter((file) => demoFiles.delete(file));
+      const structuredContent = { status: "deleted", deleted };
+      return {
+        content: [{ type: "text", text: `Deleted: ${deleted.join(", ") || "none"}` }],
+        structuredContent,
+      };
+    },
+  );
+
   return server;
 }
 
 export async function startServer({ port = 3000, onRequest } = {}) {
-  const mcpHandler = createMcpHandler(createStateServer, {
+  // Like countersById, this store lives outside each per-request McpServer.
+  // It is scoped to one HTTP server so separate demos cannot interfere.
+  const demoFiles = new Set(["a.txt", "b.txt", "c.txt", "keep.txt"]);
+  const mcpHandler = createMcpHandler(() => createStateServer(demoFiles), {
     legacy: "reject",
     onerror: (error) => console.error("MCP error:", error),
   });
