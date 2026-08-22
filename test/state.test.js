@@ -37,32 +37,19 @@ test("delete-files uses MRTR to confirm or cancel destructive work", async () =>
   assert.ok(deleteRequests.every(({ sessionId }) => sessionId === null));
 });
 
-test("progress and logs remain scoped to each tool request", async () => {
+test("progress remains scoped to each tool request", async () => {
   const result = await runDemo(() => {});
 
   assert.deepEqual(
-    result.progressByJob.verbose.map(({ progress }) => progress),
+    result.progressByJob.alpha.map(({ progress }) => progress),
     [10, 30, 70],
   );
   assert.deepEqual(
-    result.progressByJob.quiet.map(({ progress }) => progress),
+    result.progressByJob.beta.map(({ progress }) => progress),
     [10, 30, 70],
   );
-  assert.deepEqual(
-    result.requestLogs.map(({ data }) => data),
-    [
-      { job: "verbose", progress: 10 },
-      { job: "verbose", progress: 30 },
-      { job: "verbose", progress: 70 },
-    ],
-  );
-  assert.deepEqual(
-    result.logsByJob.verbose.map(({ data }) => data.progress),
-    [10, 30, 70],
-  );
-  assert.deepEqual(result.logsByJob.quiet, []);
   assert.deepEqual(result.workResults, [
-    { job: "verbose", status: "complete" },
-    { job: "quiet", status: "complete" },
+    { job: "alpha", status: "complete" },
+    { job: "beta", status: "complete" },
   ]);
 });

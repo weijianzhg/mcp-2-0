@@ -15,10 +15,9 @@ The example has one server, one demo, and five tools split across four scenarios
   client answers it and automatically retries the same tool call with
   `inputResponses`; the server then either deletes the virtual files or
   cancels the operation.
-- `run-work` emits progress and debug logs on the response stream belonging
-  to one tool call. Two concurrent calls demonstrate that each progress
-  callback receives only its own updates, while only the request carrying
-  `_meta["io.modelcontextprotocol/logLevel"] = "debug"` receives logs.
+- `run-work` emits progress on the response stream belonging to one tool call.
+  Two concurrent calls demonstrate that each progress callback receives only
+  its own updates.
 
 No request carries an `Mcp-Session-Id`. The application is stateful, but the
 protocol remains stateless.
@@ -54,7 +53,7 @@ npm test
 ## Project structure
 
 ```text
-src/server.js    MCP server and tools for state, MRTR, progress, and logging
+src/server.js    MCP server and tools for state, MRTR, and progress
 src/demo.js      client that demonstrates and verifies their behavior
 test/state.test.js
 ```
@@ -65,7 +64,3 @@ the authenticated principal, with authorization and expiry checks.
 
 The MCP packages are pinned to `2.0.0`, which includes the `inputRequired`
 and `acceptedContent` helpers used by the MRTR example.
-
-Protocol logging and `io.modelcontextprotocol/logLevel` are deprecated in
-MCP `2026-07-28`, though they remain available during the deprecation window.
-Use stderr for stdio servers or OpenTelemetry for production observability.

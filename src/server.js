@@ -27,10 +27,7 @@ const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mill
 function createStateServer(demoFiles) {
   const serverInstance = ++nextServerInstance;
   let ephemeralCounter = 0;
-  const server = new McpServer(
-    { name: "mcp-state-demo", version: "0.1.0" },
-    { capabilities: { logging: {} } },
-  );
+  const server = new McpServer({ name: "mcp-state-demo", version: "0.1.0" });
 
   server.registerTool(
     "increment-ephemeral-counter",
@@ -143,7 +140,7 @@ function createStateServer(demoFiles) {
   server.registerTool(
     "run-work",
     {
-      description: "Demonstrate progress and logs scoped to one tool request.",
+      description: "Demonstrate progress scoped to one tool request.",
       inputSchema: z.object({ job: z.string() }),
       outputSchema: z.object({ job: z.string(), status: z.literal("complete") }),
     },
@@ -162,11 +159,6 @@ function createStateServer(demoFiles) {
             },
           });
         }
-
-        // In 2026-07-28 this is emitted only when this request carries
-        // _meta["io.modelcontextprotocol/logLevel"]. Protocol logging is
-        // deprecated, but remains available during the deprecation window.
-        await ctx.mcpReq.log("debug", { job, progress }, "work-demo");
         await wait(5);
       }
 

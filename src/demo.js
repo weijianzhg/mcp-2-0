@@ -1,10 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import {
-  Client,
-  LOG_LEVEL_META_KEY,
-  StreamableHTTPClientTransport,
-} from "@modelcontextprotocol/client";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 import { startServer } from "./server.js";
 
@@ -19,7 +15,6 @@ export async function runDemo(log = console.log) {
   const requests = [];
   const elicitationRequests = [];
   const confirmationAnswers = [true, false];
-  const requestLogs = [];
   const server = await startServer({
     port: 0,
     onRequest: (request) => requests.push(request),
@@ -37,9 +32,6 @@ export async function runDemo(log = console.log) {
     if (confirm === undefined) throw new Error("No demo confirmation answer available");
     elicitationRequests.push({ message: request.params.message, confirm });
     return { action: "accept", content: { confirm } };
-  });
-  client.setNotificationHandler("notifications/message", async (notification) => {
-    requestLogs.push(notification.params);
   });
 
   try {
@@ -80,26 +72,18 @@ export async function runDemo(log = console.log) {
       }),
     );
 
-    const progressByJob = { verbose: [], quiet: [] };
-    const [verboseWork, quietWork] = await Promise.all([
+    const progressByJob = { alpha: [], beta: [] };
+    const [alphaWork, betaWork] = await Promise.all([
       client.callTool(
-        {
-          name: "run-work",
-          arguments: { job: "verbose" },
-          _meta: { [LOG_LEVEL_META_KEY]: "debug" },
-        },
-        { onprogress: (progress) => progressByJob.verbose.push(progress) },
+        { name: "run-work", arguments: { job: "alpha" } },
+        { onprogress: (progress) => progressByJob.alpha.push(progress) },
       ),
       client.callTool(
-        { name: "run-work", arguments: { job: "quiet" } },
-        { onprogress: (progress) => progressByJob.quiet.push(progress) },
+        { name: "run-work", arguments: { job: "beta" } },
+        { onprogress: (progress) => progressByJob.beta.push(progress) },
       ),
     ]);
-    const workResults = [getOutput(verboseWork), getOutput(quietWork)];
-    const logsByJob = { verbose: [], quiet: [] };
-    for (const requestLog of requestLogs) {
-      logsByJob[requestLog.data.job]?.push(requestLog);
-    }
+    const workResults = [getOutput(alphaWork), getOutput(betaWork)];
 
     log("\nEvery request is independent:");
     for (const request of requests) {
@@ -123,17 +107,9 @@ export async function runDemo(log = console.log) {
     log("  confirmed result:", confirmedDeletion);
     log("  cancelled result:", cancelledDeletion);
 
-    log("\nRequest-scoped progress and logs:");
-    log("  verbose progress:", progressByJob.verbose.map(({ progress }) => progress));
-    log("  quiet progress:", progressByJob.quiet.map(({ progress }) => progress));
-    log(
-      "  verbose debug logs (opted in):",
-      logsByJob.verbose.map(({ data }) => data.progress),
-    );
-    log(
-      "  quiet debug logs (not opted in):",
-      logsByJob.quiet.map(({ data }) => data.progress),
-    );
+    log("\nRequest-scoped progress:");
+    log("  alpha progress:", progressByJob.alpha.map(({ progress }) => progress));
+    log("  beta progress:", progressByJob.beta.map(({ progress }) => progress));
     log("  results:", workResults);
 
     return {
@@ -144,8 +120,6 @@ export async function runDemo(log = console.log) {
       confirmedDeletion,
       cancelledDeletion,
       progressByJob,
-      requestLogs,
-      logsByJob,
       workResults,
     };
   } finally {
