@@ -56,6 +56,11 @@ test("progress and logs remain scoped to each tool request", async () => {
       { job: "verbose", progress: 70 },
     ],
   );
+  assert.deepEqual(
+    result.logsByJob.verbose.map(({ data }) => data.progress),
+    [10, 30, 70],
+  );
+  assert.deepEqual(result.logsByJob.quiet, []);
   assert.deepEqual(result.workResults, [
     { job: "verbose", status: "complete" },
     { job: "quiet", status: "complete" },

@@ -96,6 +96,10 @@ export async function runDemo(log = console.log) {
       ),
     ]);
     const workResults = [getOutput(verboseWork), getOutput(quietWork)];
+    const logsByJob = { verbose: [], quiet: [] };
+    for (const requestLog of requestLogs) {
+      logsByJob[requestLog.data.job]?.push(requestLog);
+    }
 
     log("\nEvery request is independent:");
     for (const request of requests) {
@@ -123,8 +127,12 @@ export async function runDemo(log = console.log) {
     log("  verbose progress:", progressByJob.verbose.map(({ progress }) => progress));
     log("  quiet progress:", progressByJob.quiet.map(({ progress }) => progress));
     log(
-      "  emitted debug logs:",
-      requestLogs.map(({ data }) => `${data.job}:${data.progress}`),
+      "  verbose debug logs (opted in):",
+      logsByJob.verbose.map(({ data }) => data.progress),
+    );
+    log(
+      "  quiet debug logs (not opted in):",
+      logsByJob.quiet.map(({ data }) => data.progress),
     );
     log("  results:", workResults);
 
@@ -137,6 +145,7 @@ export async function runDemo(log = console.log) {
       cancelledDeletion,
       progressByJob,
       requestLogs,
+      logsByJob,
       workResults,
     };
   } finally {
