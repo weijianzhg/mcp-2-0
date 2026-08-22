@@ -1,0 +1,21 @@
+{
+  "name": "mcp-v2-js-playground",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal JavaScript demonstration of state with stateless MCP 2026-07-28.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "demo": "node src/demo.js",
+    "server": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0-beta.5",
+    "@modelcontextprotocol/node": "2.0.0-beta.5",
+    "@modelcontextprotocol/server": "2.0.0-beta.5",
+    "zod": "^4.4.3"
+  }
+}
