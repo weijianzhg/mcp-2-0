@@ -22,10 +22,15 @@ let nextServerInstance = 0;
 
 const confirmationSchema = z.object({ confirm: z.boolean() });
 
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 function createStateServer(demoFiles) {
   const serverInstance = ++nextServerInstance;
   let ephemeralCounter = 0;
-  const server = new McpServer({ name: "mcp-state-demo", version: "0.1.0" });
+  const server = new McpServer(
+    { name: "mcp-state-demo", version: "0.1.0" },
+    { capabilities: { logging: {} } },
+  );
 
   server.registerTool(
     "increment-ephemeral-counter",
@@ -130,6 +135,44 @@ function createStateServer(demoFiles) {
       const structuredContent = { status: "deleted", deleted };
       return {
         content: [{ type: "text", text: `Deleted: ${deleted.join(", ") || "none"}` }],
+        structuredContent,
+      };
+    },
+  );
+
+  server.registerTool(
+    "run-work",
+    {
+      description: "Demonstrate progress and logs scoped to one tool request.",
+      inputSchema: z.object({ job: z.string() }),
+      outputSchema: z.object({ job: z.string(), status: z.literal("complete") }),
+    },
+    async ({ job }, ctx) => {
+      const progressToken = ctx.mcpReq._meta?.progressToken;
+
+      for (const progress of [10, 30, 70]) {
+        if (progressToken !== undefined) {
+          await ctx.mcpReq.notify({
+            method: "notifications/progress",
+            params: {
+              progressToken,
+              progress,
+              total: 100,
+              message: `${job}: ${progress}%`,
+            },
+          });
+        }
+
+        // In 2026-07-28 this is emitted only when this request carries
+        // _meta["io.modelcontextprotocol/logLevel"]. Protocol logging is
+        // deprecated, but remains available during the deprecation window.
+        await ctx.mcpReq.log("debug", { job, progress }, "work-demo");
+        await wait(5);
+      }
+
+      const structuredContent = { job, status: "complete" };
+      return {
+        content: [{ type: "text", text: `${job}: complete` }],
         structuredContent,
       };
     },

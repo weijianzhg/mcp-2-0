@@ -3,7 +3,7 @@
 A minimal JavaScript example showing how application state works with the
 stateless MCP `2026-07-28` protocol.
 
-The example has one server, one demo, and four tools split across three scenarios:
+The example has one server, one demo, and five tools split across four scenarios:
 
 - `increment-ephemeral-counter` keeps state inside a per-request `McpServer`.
   Calling it twice returns `1` twice from two different server instances.
@@ -15,6 +15,10 @@ The example has one server, one demo, and four tools split across three scenario
   client answers it and automatically retries the same tool call with
   `inputResponses`; the server then either deletes the virtual files or
   cancels the operation.
+- `run-work` emits progress and debug logs on the response stream belonging
+  to one tool call. Two concurrent calls demonstrate that each progress
+  callback receives only its own updates, while only the request carrying
+  `_meta["io.modelcontextprotocol/logLevel"] = "debug"` receives logs.
 
 No request carries an `Mcp-Session-Id`. The application is stateful, but the
 protocol remains stateless.
@@ -28,10 +32,10 @@ npm install
 npm run demo
 ```
 
-The demo starts the server on an available local port, runs all three
+The demo starts the server on an available local port, runs all four
 scenarios, prints the relevant request headers, confirmation exchange, and
-results, and shuts down. The deletion example uses an in-memory virtual file
-set and never touches files on disk.
+request-scoped events, and then shuts down. The deletion example uses an
+in-memory virtual file set and never touches files on disk.
 
 To leave the server running for another MCP client:
 
@@ -50,7 +54,7 @@ npm test
 ## Project structure
 
 ```text
-src/server.js    MCP server, state tools, and MRTR confirmation tool
+src/server.js    MCP server and tools for state, MRTR, progress, and logging
 src/demo.js      client that demonstrates and verifies their behavior
 test/state.test.js
 ```
@@ -61,3 +65,7 @@ the authenticated principal, with authorization and expiry checks.
 
 The MCP packages are pinned to `2.0.0`, which includes the `inputRequired`
 and `acceptedContent` helpers used by the MRTR example.
+
+Protocol logging and `io.modelcontextprotocol/logLevel` are deprecated in
+MCP `2026-07-28`, though they remain available during the deprecation window.
+Use stderr for stdio servers or OpenTelemetry for production observability.

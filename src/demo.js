@@ -1,6 +1,10 @@
 import { pathToFileURL } from "node:url";
 
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import {
+  Client,
+  LOG_LEVEL_META_KEY,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
 
 import { startServer } from "./server.js";
 
@@ -15,6 +19,7 @@ export async function runDemo(log = console.log) {
   const requests = [];
   const elicitationRequests = [];
   const confirmationAnswers = [true, false];
+  const requestLogs = [];
   const server = await startServer({
     port: 0,
     onRequest: (request) => requests.push(request),
@@ -32,6 +37,9 @@ export async function runDemo(log = console.log) {
     if (confirm === undefined) throw new Error("No demo confirmation answer available");
     elicitationRequests.push({ message: request.params.message, confirm });
     return { action: "accept", content: { confirm } };
+  });
+  client.setNotificationHandler("notifications/message", async (notification) => {
+    requestLogs.push(notification.params);
   });
 
   try {
@@ -72,6 +80,23 @@ export async function runDemo(log = console.log) {
       }),
     );
 
+    const progressByJob = { verbose: [], quiet: [] };
+    const [verboseWork, quietWork] = await Promise.all([
+      client.callTool(
+        {
+          name: "run-work",
+          arguments: { job: "verbose" },
+          _meta: { [LOG_LEVEL_META_KEY]: "debug" },
+        },
+        { onprogress: (progress) => progressByJob.verbose.push(progress) },
+      ),
+      client.callTool(
+        { name: "run-work", arguments: { job: "quiet" } },
+        { onprogress: (progress) => progressByJob.quiet.push(progress) },
+      ),
+    ]);
+    const workResults = [getOutput(verboseWork), getOutput(quietWork)];
+
     log("\nEvery request is independent:");
     for (const request of requests) {
       const target = request.name ? `${request.method} (${request.name})` : request.method;
@@ -94,6 +119,15 @@ export async function runDemo(log = console.log) {
     log("  confirmed result:", confirmedDeletion);
     log("  cancelled result:", cancelledDeletion);
 
+    log("\nRequest-scoped progress and logs:");
+    log("  verbose progress:", progressByJob.verbose.map(({ progress }) => progress));
+    log("  quiet progress:", progressByJob.quiet.map(({ progress }) => progress));
+    log(
+      "  emitted debug logs:",
+      requestLogs.map(({ data }) => `${data.job}:${data.progress}`),
+    );
+    log("  results:", workResults);
+
     return {
       requests,
       ephemeral,
@@ -101,6 +135,9 @@ export async function runDemo(log = console.log) {
       elicitationRequests,
       confirmedDeletion,
       cancelledDeletion,
+      progressByJob,
+      requestLogs,
+      workResults,
     };
   } finally {
     await client.close();
