@@ -27,7 +27,16 @@ const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mill
 function createStateServer(demoFiles) {
   const serverInstance = ++nextServerInstance;
   let ephemeralCounter = 0;
-  const server = new McpServer({ name: "mcp-state-demo", version: "0.1.0" });
+  const server = new McpServer(
+    { name: "mcp-state-demo", version: "0.1.0" },
+    {
+      cacheHints: {
+        // The tool catalog is identical for every user and changes rarely, so
+        // clients and shared intermediaries may reuse it for five minutes.
+        "tools/list": { ttlMs: 300_000, cacheScope: "public" },
+      },
+    },
+  );
 
   server.registerTool(
     "increment-ephemeral-counter",

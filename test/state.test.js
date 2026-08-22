@@ -53,3 +53,15 @@ test("progress remains scoped to each tool request", async () => {
     { job: "beta", status: "complete" },
   ]);
 });
+
+test("tools/list reuses a fresh public cache entry", async () => {
+  const result = await runDemo(() => {});
+
+  assert.deepEqual(result.cacheability, {
+    ttlMs: 300_000,
+    cacheScope: "public",
+    sameToolCount: true,
+    requestsForFirstAndRepeatedCall: 1,
+    requestsAfterForcedRefresh: 2,
+  });
+});

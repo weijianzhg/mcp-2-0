@@ -85,6 +85,27 @@ export async function runDemo(log = console.log) {
     ]);
     const workResults = [getOutput(alphaWork), getOutput(betaWork)];
 
+    const toolListRequestsBefore = requests.filter(
+      ({ method }) => method === "tools/list",
+    ).length;
+    const firstToolList = await client.listTools();
+    const cachedToolList = await client.listTools();
+    const toolListRequestsAfterCacheHit = requests.filter(
+      ({ method }) => method === "tools/list",
+    ).length;
+    await client.listTools(undefined, { cacheMode: "refresh" });
+    const toolListRequestsAfterRefresh = requests.filter(
+      ({ method }) => method === "tools/list",
+    ).length;
+    const cacheability = {
+      ttlMs: firstToolList.ttlMs,
+      cacheScope: firstToolList.cacheScope,
+      sameToolCount: firstToolList.tools.length === cachedToolList.tools.length,
+      requestsForFirstAndRepeatedCall:
+        toolListRequestsAfterCacheHit - toolListRequestsBefore,
+      requestsAfterForcedRefresh: toolListRequestsAfterRefresh - toolListRequestsBefore,
+    };
+
     log("\nEvery request is independent:");
     for (const request of requests) {
       const target = request.name ? `${request.method} (${request.name})` : request.method;
@@ -112,6 +133,9 @@ export async function runDemo(log = console.log) {
     log("  beta progress:", progressByJob.beta.map(({ progress }) => progress));
     log("  results:", workResults);
 
+    log("\nCacheable tool catalog:");
+    log(" ", cacheability);
+
     return {
       requests,
       ephemeral,
@@ -121,6 +145,7 @@ export async function runDemo(log = console.log) {
       cancelledDeletion,
       progressByJob,
       workResults,
+      cacheability,
     };
   } finally {
     await client.close();
