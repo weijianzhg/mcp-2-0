@@ -33,27 +33,56 @@ The endpoint is `http://127.0.0.1:3000/mcp`. Set `PORT` to override the port.
 
 ## 1. Stateless MCP vs stateful app
 
-MCP `2026-07-28` has no protocol-level HTTP sessions. This project creates a
-fresh `McpServer` for each request:
+MCP `2026-07-28` has no protocol-level HTTP sessions. [`src/server.js`](src/server.js)
+creates a fresh `McpServer` for each request:
 
 ```js
+function createDemoServer(demoFiles) {
+  const server = new McpServer({ name: "mcp-demo", version: "0.1.0" }, { cacheHints });
+  registerStateTools(server);
+  registerConfirmTool(server, demoFiles);
+  return server;
+}
+
 const mcpHandler = createMcpHandler(() => createDemoServer(demoFiles), {
   legacy: "reject",
+  onerror: (error) => console.error("MCP error:", error),
 });
 ```
 
 State stored on that instance disappears when the request ends. Application
-state lives outside `McpServer` and is selected with an explicit handle:
+state lives outside `McpServer` in [`src/state.js`](src/state.js) and is selected
+with an explicit handle:
 
 ```js
 const countersById = new Map();
-let ephemeral = 0; // dies with this request's McpServer
 
-server.registerTool("create-counter", { ... }, async () => {
-  const counterId = randomUUID();
-  countersById.set(counterId, 0);
-  return ok({ counterId, value: 0 });
-});
+export function registerStateTools(server) {
+  const serverInstance = ++nextServerInstance;
+  let ephemeral = 0; // dies with this request's McpServer
+
+  server.registerTool(
+    "increment-ephemeral",
+    {
+      description: "Increment state held only by this per-request server instance.",
+      outputSchema: z.object({ value: z.number(), serverInstance: z.number() }),
+    },
+    async () => ok({ value: ++ephemeral, serverInstance }),
+  );
+
+  server.registerTool(
+    "create-counter",
+    {
+      description: "Create application state and return its explicit handle.",
+      outputSchema: z.object({ counterId: z.uuid(), value: z.number() }),
+    },
+    async () => {
+      const counterId = randomUUID();
+      countersById.set(counterId, 0);
+      return ok({ counterId, value: 0 });
+    },
+  );
+}
 ```
 
 The client carries `counterId` between otherwise independent calls. Calling
@@ -67,7 +96,8 @@ authorization on every lookup.
 ## 2. Multi round-trip requests
 
 A tool that needs more input returns `input_required`. The client gathers the
-answer and retries the original request with `inputResponses`:
+answer and retries the original request with `inputResponses`. From
+[`src/confirm.js`](src/confirm.js):
 
 ```js
 const confirmation = acceptedContent(
@@ -80,7 +110,7 @@ if (confirmation === undefined) {
   return inputRequired({
     inputRequests: {
       confirm: inputRequired.elicit({
-        message: `Delete ${files.length} virtual files?`,
+        message: `Delete ${files.length} virtual file${files.length === 1 ? "" : "s"}?`,
         requestedSchema: confirmationSchema,
       }),
     },
@@ -88,11 +118,13 @@ if (confirmation === undefined) {
 }
 ```
 
-The SDK can fulfil that round trip through an elicitation handler:
+The demo client in [`src/demo.js`](src/demo.js) answers those elicitations and
+retries automatically:
 
 ```js
 client.setRequestHandler("elicitation/create", async (request) => {
-  const confirm = await askUser(request.params.message);
+  const confirm = confirmationAnswers.shift();
+  elicitationRequests.push({ message: request.params.message, confirm });
   return { action: "accept", content: { confirm } };
 });
 ```
@@ -102,8 +134,8 @@ authenticate the caller and independently enforce permission to delete files.
 
 ## 3. Caching
 
-List results carry a freshness lifetime and sharing policy. This server marks
-its tool catalog as reusable for five minutes:
+List results carry a freshness lifetime and sharing policy. [`src/server.js`](src/server.js)
+marks the tool catalog as reusable for five minutes:
 
 ```js
 const cacheHints = {
@@ -113,13 +145,16 @@ const cacheHints = {
 const server = new McpServer({ name: "mcp-demo", version: "0.1.0" }, { cacheHints });
 ```
 
-The client uses fresh entries automatically:
+The client in [`src/demo.js`](src/demo.js) uses fresh entries automatically:
 
 ```js
-await client.listTools(); // network request; stores the result
-await client.listTools(); // cache hit; no network request
+await client.listTools();
+await client.listTools();
 await client.listTools(undefined, { cacheMode: "refresh" });
 ```
+
+The first call is a network request, the second is a cache hit, and
+`cacheMode: "refresh"` forces a new request.
 
 - `public` allows clients and shared intermediaries to reuse the result across users.
 - `private` restricts reuse to the requesting authorization context.
