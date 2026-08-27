@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 
@@ -7,186 +6,25 @@ import {
   localhostOriginValidation,
   toNodeHandler,
 } from "@modelcontextprotocol/node";
-import {
-  acceptedContent,
-  createMcpHandler,
-  inputRequired,
-  McpServer,
-} from "@modelcontextprotocol/server";
-import * as z from "zod/v4";
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 
-// This Map represents durable application storage. It deliberately lives
-// outside McpServer so fresh server instances can access the same counters.
-const countersById = new Map();
-let nextServerInstance = 0;
+import { registerConfirmTool } from "./confirm.js";
+import { registerStateTools } from "./state.js";
 
-const confirmationSchema = z.object({ confirm: z.boolean() });
+const cacheHints = {
+  "tools/list": { ttlMs: 300_000, cacheScope: "public" },
+};
 
-const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-
-function createStateServer(demoFiles) {
-  const serverInstance = ++nextServerInstance;
-  let ephemeralCounter = 0;
-  const server = new McpServer(
-    { name: "mcp-state-demo", version: "0.1.0" },
-    {
-      cacheHints: {
-        // The tool catalog is identical for every user and changes rarely, so
-        // clients and shared intermediaries may reuse it for five minutes.
-        "tools/list": { ttlMs: 300_000, cacheScope: "public" },
-      },
-    },
-  );
-
-  server.registerTool(
-    "increment-ephemeral-counter",
-    {
-      description: "Increment state held only by this per-request server instance.",
-      outputSchema: z.object({
-        value: z.number(),
-        serverInstance: z.number(),
-      }),
-    },
-    async () => {
-      ephemeralCounter += 1;
-      const structuredContent = { value: ephemeralCounter, serverInstance };
-      return {
-        content: [{ type: "text", text: JSON.stringify(structuredContent) }],
-        structuredContent,
-      };
-    },
-  );
-
-  server.registerTool(
-    "create-counter",
-    {
-      description: "Create application state and return its explicit handle.",
-      outputSchema: z.object({ counterId: z.uuid(), value: z.number() }),
-    },
-    async () => {
-      const counterId = randomUUID();
-      countersById.set(counterId, 0);
-      const structuredContent = { counterId, value: 0 };
-      return {
-        content: [{ type: "text", text: JSON.stringify(structuredContent) }],
-        structuredContent,
-      };
-    },
-  );
-
-  server.registerTool(
-    "increment-counter",
-    {
-      description: "Increment application state selected by counterId.",
-      inputSchema: z.object({ counterId: z.uuid() }),
-      outputSchema: z.object({ counterId: z.uuid(), value: z.number() }),
-    },
-    async ({ counterId }) => {
-      const currentValue = countersById.get(counterId);
-      if (currentValue === undefined) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: `Unknown counterId: ${counterId}` }],
-        };
-      }
-
-      const value = currentValue + 1;
-      countersById.set(counterId, value);
-      const structuredContent = { counterId, value };
-      return {
-        content: [{ type: "text", text: JSON.stringify(structuredContent) }],
-        structuredContent,
-      };
-    },
-  );
-
-  server.registerTool(
-    "delete-files",
-    {
-      description: "Delete virtual demo files after asking the user for confirmation.",
-      inputSchema: z.object({ files: z.array(z.string()).min(1) }),
-      outputSchema: z.object({
-        status: z.enum(["cancelled", "deleted"]),
-        deleted: z.array(z.string()),
-      }),
-      annotations: { destructiveHint: true },
-    },
-    async ({ files }, ctx) => {
-      const confirmation = acceptedContent(
-        ctx.mcpReq.inputResponses,
-        "confirm",
-        confirmationSchema,
-      );
-
-      if (confirmation === undefined) {
-        return inputRequired({
-          inputRequests: {
-            confirm: inputRequired.elicit({
-              message: `Delete ${files.length} virtual file${files.length === 1 ? "" : "s"}?`,
-              requestedSchema: confirmationSchema,
-            }),
-          },
-        });
-      }
-
-      if (!confirmation.confirm) {
-        const structuredContent = { status: "cancelled", deleted: [] };
-        return {
-          content: [{ type: "text", text: "Cancelled" }],
-          structuredContent,
-        };
-      }
-
-      const deleted = files.filter((file) => demoFiles.delete(file));
-      const structuredContent = { status: "deleted", deleted };
-      return {
-        content: [{ type: "text", text: `Deleted: ${deleted.join(", ") || "none"}` }],
-        structuredContent,
-      };
-    },
-  );
-
-  server.registerTool(
-    "run-work",
-    {
-      description: "Demonstrate progress scoped to one tool request.",
-      inputSchema: z.object({ job: z.string() }),
-      outputSchema: z.object({ job: z.string(), status: z.literal("complete") }),
-    },
-    async ({ job }, ctx) => {
-      const progressToken = ctx.mcpReq._meta?.progressToken;
-
-      for (const progress of [10, 30, 70]) {
-        if (progressToken !== undefined) {
-          await ctx.mcpReq.notify({
-            method: "notifications/progress",
-            params: {
-              progressToken,
-              progress,
-              total: 100,
-              message: `${job}: ${progress}%`,
-            },
-          });
-        }
-        await wait(5);
-      }
-
-      const structuredContent = { job, status: "complete" };
-      return {
-        content: [{ type: "text", text: `${job}: complete` }],
-        structuredContent,
-      };
-    },
-  );
-
+function createDemoServer(demoFiles) {
+  const server = new McpServer({ name: "mcp-demo", version: "0.1.0" }, { cacheHints });
+  registerStateTools(server);
+  registerConfirmTool(server, demoFiles);
   return server;
 }
 
 export async function startServer({ port = 3000, onRequest } = {}) {
-  // Like countersById, this store lives outside each per-request McpServer.
-  // It is scoped to one HTTP server so separate demos cannot interfere.
   const demoFiles = new Set(["a.txt", "b.txt", "c.txt", "keep.txt"]);
-  const mcpHandler = createMcpHandler(() => createStateServer(demoFiles), {
+  const mcpHandler = createMcpHandler(() => createDemoServer(demoFiles), {
     legacy: "reject",
     onerror: (error) => console.error("MCP error:", error),
   });
